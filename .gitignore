@@ -1,0 +1,4 @@
+# Probe targets stay in the MONITOR_TARGETS secret — never commit them.
+monitor_targets.json
+state/
+__pycache__/

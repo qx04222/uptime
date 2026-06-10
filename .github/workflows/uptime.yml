@@ -1,0 +1,31 @@
+# Fleet uptime probe — public repo so GHA minutes are free.
+# Targets come from the MONITOR_TARGETS secret; outage issues go to the
+# private repo via UPTIME_ISSUES_PAT. Logs never contain URLs.
+name: Uptime probe
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes (GHA min granularity is 5)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe
+        env:
+          MONITOR_TARGETS: ${{ secrets.MONITOR_TARGETS }}
+          GH_TOKEN: ${{ secrets.UPTIME_ISSUES_PAT }}
+          ISSUE_REPO: qx04222/railway-audit
+          LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
+          LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+          LARK_RECEIVE_ID: ${{ secrets.LARK_RECEIVE_ID }}
+        run: python3 uptime_probe.py
