@@ -28,4 +28,5 @@ jobs:
           LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
           LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
           LARK_RECEIVE_ID: ${{ secrets.LARK_RECEIVE_ID }}
+          WECOM_OPS_WEBHOOK: ${{ secrets.WECOM_OPS_WEBHOOK }}
         run: python3 uptime_probe.py

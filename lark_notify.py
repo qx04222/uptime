@@ -131,15 +131,58 @@ def _get_token() -> str | None:
     return _token_cache["token"]
 
 
+def _card_to_markdown(card: dict) -> str:
+    """Lark card → WeCom markdown: bold title, the lark_md body, URL buttons as links.
+    Payload buttons (Lark card callbacks) have no WeCom equivalent and are dropped."""
+    title = card.get("header", {}).get("title", {}).get("content", "")
+    parts = [f"**{title}**"] if title else []
+    for el in card.get("elements", []):
+        if el.get("tag") == "div":
+            parts.append(el.get("text", {}).get("content", ""))
+        for action in el.get("actions", []) if el.get("tag") == "action" else []:
+            if action.get("url"):
+                parts.append(f"[{action.get('text', {}).get('content', 'Open')}]({action['url']})")
+    text = "\n".join(p for p in parts if p)
+    return text.encode()[:4000].decode(errors="ignore")   # WeCom markdown cap is 4096 bytes
+
+
+def _send_wecom(card: dict) -> tuple[bool, str]:
+    """Post to the WeCom ops group webhook (WECOM_OPS_WEBHOOK). Success = errcode 0."""
+    url = _env("WECOM_OPS_WEBHOOK")
+    if not url:
+        return False, "WECOM_OPS_WEBHOOK not set"
+    body = json.dumps({"msgtype": "markdown", "markdown": {"content": _card_to_markdown(card)}}).encode()
+    req = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, ValueError) as e:
+        return False, f"network: {e}"
+    if data.get("errcode") != 0:
+        return False, f"wecom errcode={data.get('errcode')} msg={data.get('errmsg')}"
+    return True, "sent"
+
+
 def _send_card(card: dict, *, dedup_key: str | None = None, repeat_interval_hours: float = DEFAULT_REPEAT_INTERVAL_HOURS) -> tuple[bool, str]:
-    """Send a Lark card. If dedup_key is provided, suppress repeat sends of the
-       same fingerprint within repeat_interval_hours."""
+    """Send an alert card to the WeCom ops group and (while it still exists) Lark DM.
+       Either channel landing counts as sent. If dedup_key is provided, suppress
+       repeat sends of the same fingerprint within repeat_interval_hours."""
     # Dedup check before any network call
     if dedup_key:
         ok, reason = _should_send(dedup_key, repeat_interval_hours)
         if not ok:
             print(f"  lark: {reason}", flush=True)
             return True, reason  # treat as "successful" — intentional suppression
+    wecom_ok, wecom_msg = _send_wecom(card)
+    lark_ok, lark_msg = _send_lark(card)
+    print(f"  notify: wecom={wecom_msg} | lark={lark_msg}", flush=True)
+    if (wecom_ok or lark_ok) and dedup_key:
+        title = card.get("header", {}).get("title", {}).get("content", "?")
+        _record_send(dedup_key, title)
+    return wecom_ok or lark_ok, f"wecom: {wecom_msg}; lark: {lark_msg}"
+
+
+def _send_lark(card: dict) -> tuple[bool, str]:
     if not _have_credentials():
         return False, "LARK_APP_ID/SECRET/RECEIVE_ID not all set — skipping"
     token = _get_token()
@@ -175,9 +218,6 @@ def _send_card(card: dict, *, dedup_key: str | None = None, repeat_interval_hour
     if data.get("code") != 0:
         return False, f"lark err code={data.get('code')} msg={data.get('msg')}"
     msg_id = data.get("data", {}).get("message_id", "")
-    if dedup_key:
-        title = card.get("header", {}).get("title", {}).get("content", "?")
-        _record_send(dedup_key, title)
     return True, f"sent msg_id={msg_id}"
 
 
