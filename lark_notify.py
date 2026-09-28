@@ -164,9 +164,9 @@ def _send_wecom(card: dict) -> tuple[bool, str]:
 
 
 def _send_card(card: dict, *, dedup_key: str | None = None, repeat_interval_hours: float = DEFAULT_REPEAT_INTERVAL_HOURS) -> tuple[bool, str]:
-    """Send an alert card to the WeCom ops group and (while it still exists) Lark DM.
-       Either channel landing counts as sent. If dedup_key is provided, suppress
-       repeat sends of the same fingerprint within repeat_interval_hours."""
+    """Send an alert card to the WeCom ops group (Lark retired 2026-09-28 — nothing goes
+       there any more). If dedup_key is provided, suppress repeat sends of the same
+       fingerprint within repeat_interval_hours."""
     # Dedup check before any network call
     if dedup_key:
         ok, reason = _should_send(dedup_key, repeat_interval_hours)
@@ -174,12 +174,11 @@ def _send_card(card: dict, *, dedup_key: str | None = None, repeat_interval_hour
             print(f"  lark: {reason}", flush=True)
             return True, reason  # treat as "successful" — intentional suppression
     wecom_ok, wecom_msg = _send_wecom(card)
-    lark_ok, lark_msg = _send_lark(card)
-    print(f"  notify: wecom={wecom_msg} | lark={lark_msg}", flush=True)
-    if (wecom_ok or lark_ok) and dedup_key:
+    print(f"  notify: wecom={wecom_msg}", flush=True)
+    if wecom_ok and dedup_key:
         title = card.get("header", {}).get("title", {}).get("content", "?")
         _record_send(dedup_key, title)
-    return wecom_ok or lark_ok, f"wecom: {wecom_msg}; lark: {lark_msg}"
+    return wecom_ok, f"wecom: {wecom_msg}"
 
 
 def _send_lark(card: dict) -> tuple[bool, str]:
